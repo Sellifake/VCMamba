@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Deep-supervised Dice + cross-entropy loss for VCMamba (Eq. 8)."""
+"""Deep-supervised Dice + cross-entropy loss for VCMamba (Sec. 2.4)."""
 from __future__ import annotations
 
 import torch

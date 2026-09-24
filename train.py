@@ -2,45 +2,24 @@
 """VCMamba trainer.
 
 Reads preprocessed h5 volumes (image + seg), samples foreground-oversampled
-patches, and optimizes the deep-supervised Dice+CE loss with SGD and a
-polynomial LR schedule. Validation uses sliding-window inference and reports
-mean foreground Dice. Ablations: --use_cgs / --use_clr.
+128^3 patches with light spatial/intensity augmentation, and optimizes the
+deep-supervised Dice+CE loss with SGD and a polynomial LR schedule. Validation
+uses sliding-window inference and reports mean foreground Dice.
+Ablations: --use_cgs / --use_clr.
+
+    python train.py --gpu 0 --dataset ASOCA --fold 0 --tag vcmamba
 """
 from __future__ import annotations
 
 import argparse
 import os
 import random
-import sys
 import time
-
-os.environ.setdefault("OMP_NUM_THREADS", "4")
-os.environ.setdefault("MKL_NUM_THREADS", "4")
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
-os.environ.setdefault("NUMEXPR_NUM_THREADS", "4")
 
 import h5py
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, ROOT)
-
-
-def numa_bind(gpu):
-    try:
-        node = 0 if int(gpu) in (0, 1) else 1
-        cpulist = open(f"/sys/devices/system/node/node{node}/cpulist").read().strip()
-        cores = []
-        for part in cpulist.split(","):
-            if "-" in part:
-                a, b = part.split("-")
-                cores.extend(range(int(a), int(b) + 1))
-            else:
-                cores.append(int(part))
-        os.sched_setaffinity(0, set(cores))
-        print(f"NUMA{node} bound ({len(cores)} cores)", flush=True)
-    except Exception as e:
-        print("numa_bind skip:", e, flush=True)
+from config import DEFAULT_CFG
 
 
 def _pad_to(p, psize):
@@ -51,7 +30,7 @@ def _pad_to(p, psize):
     return p
 
 
-def sample_patch(im, sg, psize, rng, fg_bias=0.85):
+def sample_patch(im, sg, psize, rng, fg_bias=DEFAULT_CFG["fg_oversample_ratio"]):
     D, H, W = sg.shape
     pd, ph, pw = psize
     fg = np.argwhere(sg)
@@ -68,10 +47,23 @@ def sample_patch(im, sg, psize, rng, fg_bias=0.85):
     return pi, ps
 
 
+def augment(pi, ps, rng):
+    """Light spatial/intensity augmentation: random flips along each axis and a
+    small random intensity scale and shift (image only)."""
+    for ax in range(3):
+        if rng.random() < DEFAULT_CFG["flip_prob"]:
+            pi = np.flip(pi, axis=ax)
+            ps = np.flip(ps, axis=ax)
+    a = DEFAULT_CFG["intensity_scale"]
+    b = DEFAULT_CFG["intensity_shift"]
+    pi = pi * (1.0 + rng.uniform(-a, a)) + rng.uniform(-b, b)
+    return np.ascontiguousarray(pi, dtype=np.float32), np.ascontiguousarray(ps)
+
+
 def coronary_prior_stats(cases, train_ids):
     """Fixed HU-prior (mu, gamma) = coronary-voxel intensity mean / std over the
-    TRAINING split only. Computed here so the prior carries no test information
-    (matches the paper's no-leakage statement); passed to the model as buffers.
+    TRAINING split only, so the prior carries no validation or test information;
+    passed to the model as buffers.
     """
     vals = []
     for cid in train_ids:
@@ -122,35 +114,35 @@ def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gpu", default="0")
     ap.add_argument("--dataset", default="ASOCA")
+    ap.add_argument("--fold", type=int, default=0)
     ap.add_argument("--tag", default="vcmamba")
-    ap.add_argument("--epochs", type=int, default=1000)
-    ap.add_argument("--iters", type=int, default=150)
-    ap.add_argument("--val_interval", type=int, default=5)
-    ap.add_argument("--lr", type=float, default=1e-2)
+    ap.add_argument("--epochs", type=int, default=DEFAULT_CFG["max_epochs"])
+    ap.add_argument("--iters", type=int, default=DEFAULT_CFG["iters_per_epoch"])
+    ap.add_argument("--val_interval", type=int, default=DEFAULT_CFG["val_interval"])
+    ap.add_argument("--lr", type=float, default=DEFAULT_CFG["lr"])
     ap.add_argument("--use_cgs", type=int, default=1)
     ap.add_argument("--use_clr", type=int, default=1)
     return ap.parse_args()
 
 
 def main():
+    args = parse_args()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+
     import torch
 
-    from common.data import h5_dir, load_dataset_split, nnunet_patch_size
-    from methods.vc_mamba.config import DEFAULT_CFG
-    from methods.vc_mamba.losses import deep_supervised_loss
-    from methods.vc_mamba.model import VCMamba
+    from data import h5_dir, load_dataset_split, patch_size
+    from losses import deep_supervised_loss
+    from model import VCMamba
 
-    args = parse_args()
-    numa_bind(args.gpu)
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     device = "cuda"
     rng = random.Random(DEFAULT_CFG["seed"])
     torch.manual_seed(DEFAULT_CFG["seed"])
     np.random.seed(DEFAULT_CFG["seed"])
 
-    split = load_dataset_split(args.dataset)
+    split = load_dataset_split(args.dataset, args.fold)
     dd = h5_dir(args.dataset)
-    psize = tuple(nnunet_patch_size(args.dataset))
+    psize = patch_size(args.dataset)
 
     cases = {}
     for cid in split["train"] + split.get("val", []):
@@ -167,7 +159,7 @@ def main():
     scaler = torch.amp.GradScaler("cuda")
     ds_w = DEFAULT_CFG["ds_weights"]
 
-    ckdir = f"{ROOT}/data/checkpoint/methods/vc_mamba/{args.tag}"
+    ckdir = os.path.join("checkpoints", args.dataset, f"fold{args.fold}", args.tag)
     os.makedirs(ckdir, exist_ok=True)
     best = -1.0
 
@@ -185,7 +177,7 @@ def main():
             for _ in range(DEFAULT_CFG["num_samples"]):
                 cid = split["train"][rng.randrange(len(split["train"]))]
                 im, sg = cases[cid]
-                pi, ps = sample_patch(im, sg, psize, rng)
+                pi, ps = augment(*sample_patch(im, sg, psize, rng), rng)
                 xb.append(pi)
                 yb.append(ps)
             x = torch.from_numpy(np.stack(xb))[:, None].float().to(device)

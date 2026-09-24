@@ -1,0 +1,6 @@
+torch>=2.1
+mamba-ssm>=1.2
+numpy
+h5py
+scipy
+scikit-image>=0.19

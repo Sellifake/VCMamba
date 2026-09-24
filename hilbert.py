@@ -3,7 +3,7 @@
 
 `hilbert_order(size)` returns, for a (D, H, W) grid flattened in row-major order,
 the Hilbert distance of every voxel. Sorting by this distance yields a scan order
-in which spatial neighbours stay close in the sequence (Eq. 4, term h(v)).
+in which spatial neighbours stay close in the sequence (Eq. 5, term h(v)).
 """
 from __future__ import annotations
 

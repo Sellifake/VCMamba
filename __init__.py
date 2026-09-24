@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""VCMamba: Vessel-Confidence Mamba for coronary artery segmentation."""
-from methods.vc_mamba.model import VCMamba, build_vc_mamba
+"""VCMamba: Vessel-Confidence Mamba for coronary artery segmentation.
 
-__all__ = ["VCMamba", "build_vc_mamba"]
+Run the scripts from this directory, e.g. `python train.py --dataset ASOCA`.
+"""

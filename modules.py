@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """VCMamba building blocks.
 
-Contains the convolutional backbone primitives (borrowed in spirit from
-methods/pri_mamba), the coronary HU prior (Eq. 1), the Bayesian Confidence
-Fusion unit BCF (Eq. 3), the Confidence-Guided Scanning Mamba block CGS
-(Eq. 4-5), and the Confidence Log-odds Residual CLR (Eq. 6-7).
+Contains the convolutional backbone primitives, the coronary HU prior (Eq. 1),
+the Bayesian Confidence Fusion unit BCF with its learnable prior propagation
+(Eq. 3), the Confidence-Guided Scanning Mamba block CGS (Eq. 4-5), and the
+Confidence Log-odds Residual CLR (Eq. 6).
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from methods.vc_mamba.hilbert import hilbert_order
+from hilbert import hilbert_order
 
 try:
     from mamba_ssm import Mamba

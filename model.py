@@ -17,8 +17,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from methods.vc_mamba.config import DEFAULT_CFG, PRIOR_STATS
-from methods.vc_mamba.modules import (
+from config import DEFAULT_CFG, PRIOR_STATS
+from modules import (
     BCF, CGSMambaBlock, CLR, ConvNormAct, DownBlock, HUPrior, PriorDown,
     ResidualBlock, UpBlock,
 )
