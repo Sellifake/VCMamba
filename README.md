@@ -1,6 +1,6 @@
 # VCMamba — Vessel-Confidence Mamba
 
-Reference implementation of the BIBM paper *VCMamba: Vessel-Confidence Mamba for
+Reference implementation of the  paper *VCMamba: Vessel-Confidence Mamba for
 Coronary Artery Segmentation*. A U-shaped CNN–Mamba network that turns the
 unreliable coronary HU intensity cue into a Bayesian per-voxel vessel-confidence
 map and weaves it into both the encoder scan order and the decoder decision.
